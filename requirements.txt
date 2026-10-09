@@ -1,0 +1,13 @@
+# Core
+flask>=3.0.0
+numpy>=1.24.0
+matplotlib>=3.7.0
+
+# Raspberry Pi hardware (install only on Pi)
+# RPi.GPIO>=0.7.1
+# adafruit-circuitpython-dht>=4.0.0
+# adafruit-blinka>=8.0.0
+# hx711-rpi-py>=1.1.4.3
+
+# Dev / testing
+pytest>=8.0.0

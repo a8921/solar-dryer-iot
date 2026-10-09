@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solar Dryer Monitor — IIT Bhilai</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:       #0f1117;
+    --surface:  #1a1f2e;
+    --border:   #2d3748;
+    --text:     #e2e8f0;
+    --muted:    #94a3b8;
+    --accent:   #f97316;
+    --green:    #22c55e;
+    --blue:     #3b82f6;
+    --purple:   #a855f7;
+    --yellow:   #eab308;
+    --red:      #ef4444;
+    --card-r:   10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    padding: 16px;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 0 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+  header h1 { font-size: 1.25rem; font-weight: 700; }
+  header h1 span { color: var(--accent); }
+  #status-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--muted); display: inline-block;
+    margin-right: 8px; transition: background .3s;
+  }
+  #status-dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  #last-update { font-size: .8rem; color: var(--muted); }
+
+  /* ── Stat cards ─────────────────────────────────────────────── */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--card-r);
+    padding: 14px 16px;
+  }
+  .card-label { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+  .card-value { font-size: 1.6rem; font-weight: 700; line-height: 1; }
+  .card-unit  { font-size: .78rem; color: var(--muted); margin-left: 3px; }
+  .card-sub   { font-size: .75rem; color: var(--muted); margin-top: 4px; }
+  .c-orange { color: var(--accent); }
+  .c-green  { color: var(--green); }
+  .c-blue   { color: var(--blue); }
+  .c-purple { color: var(--purple); }
+  .c-yellow { color: var(--yellow); }
+  .c-red    { color: var(--red); }
+
+  /* ── Progress bar ───────────────────────────────────────────── */
+  .progress-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--card-r);
+    padding: 16px;
+    margin-bottom: 24px;
+  }
+  .progress-label { font-size: .8rem; color: var(--muted); margin-bottom: 8px; display: flex; justify-content: space-between; }
+  .progress-bar-bg {
+    background: var(--border);
+    border-radius: 99px;
+    height: 14px;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--blue), var(--accent));
+    transition: width .5s ease;
+    width: 0%;
+  }
+
+  /* ── Charts ─────────────────────────────────────────────────── */
+  .charts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  @media (max-width: 700px) { .charts { grid-template-columns: 1fr; } }
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--card-r);
+    padding: 16px;
+  }
+  .chart-title { font-size: .85rem; color: var(--muted); margin-bottom: 10px; font-weight: 600; }
+  canvas { max-height: 220px; }
+
+  /* ── Bottom toolbar ─────────────────────────────────────────── */
+  .toolbar { display: flex; gap: 10px; flex-wrap: wrap; }
+  button {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: .85rem;
+    transition: border-color .2s, background .2s;
+  }
+  button:hover { border-color: var(--accent); background: #2a1f0f; }
+  #btn-tare { border-color: var(--red); }
+  #btn-tare:hover { background: #2a0f0f; }
+
+  .badge {
+    display: inline-block;
+    font-size: .7rem;
+    padding: 2px 8px;
+    border-radius: 99px;
+    font-weight: 600;
+  }
+  .badge-ok  { background: #14532d; color: var(--green); }
+  .badge-err { background: #450a0a; color: var(--red); }
+  .badge-sim { background: #1e3a5f; color: var(--blue); }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>☀️ Solar Dryer Monitor — <span>IIT Bhilai</span></h1>
+    <div style="margin-top:4px;font-size:.8rem;color:var(--muted)">
+      Indirect Solar Dryer · Raspberry Pi 5 · 4×DHT11 · 2×HX711
+    </div>
+  </div>
+  <div style="text-align:right">
+    <div><span id="status-dot"></span><span id="hw-badge"></span></div>
+    <div id="last-update" style="margin-top:4px">–</div>
+  </div>
+</header>
+
+<!-- Stat cards -->
+<div class="cards">
+  <div class="card">
+    <div class="card-label">Sample Weight</div>
+    <div class="card-value c-orange" id="val-weight">–</div>
+    <div class="card-unit">g</div>
+    <div class="card-sub" id="sub-dr">drying rate: –</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Moisture Content (wb)</div>
+    <div class="card-value c-blue" id="val-mc">–</div>
+    <div class="card-unit">%</div>
+    <div class="card-sub">target ≤ 12 %</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Collector Out Temp</div>
+    <div class="card-value c-red" id="val-t-out">–</div>
+    <div class="card-unit">°C</div>
+    <div class="card-sub" id="sub-t-in">in: –</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Chamber Top Temp</div>
+    <div class="card-value c-yellow" id="val-t-top">–</div>
+    <div class="card-unit">°C</div>
+    <div class="card-sub" id="sub-t-bot">bottom: –</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Chamber Humidity</div>
+    <div class="card-value c-purple" id="val-h-top">–</div>
+    <div class="card-unit">%RH</div>
+    <div class="card-sub" id="sub-h-bot">bottom: –</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Collector Efficiency</div>
+    <div class="card-value c-green" id="val-eff">–</div>
+    <div class="card-unit">%</div>
+    <div class="card-sub">η = ṁ·Cp·ΔT / (G·Ac)</div>
+  </div>
+</div>
+
+<!-- Drying progress bar -->
+<div class="progress-wrap">
+  <div class="progress-label">
+    <span>Drying Progress</span>
+    <span id="prog-label">MC: – % → target 12 %</span>
+  </div>
+  <div class="progress-bar-bg">
+    <div class="progress-bar-fill" id="progress-bar"></div>
+  </div>
+</div>
+
+<!-- Charts -->
+<div class="charts">
+  <div class="chart-card">
+    <div class="chart-title">🌡 Temperature History</div>
+    <canvas id="chart-temp"></canvas>
+  </div>
+  <div class="chart-card">
+    <div class="chart-title">💧 Humidity History</div>
+    <canvas id="chart-hum"></canvas>
+  </div>
+  <div class="chart-card">
+    <div class="chart-title">⚖ Weight / Moisture Content</div>
+    <canvas id="chart-weight"></canvas>
+  </div>
+  <div class="chart-card">
+    <div class="chart-title">📈 Drying Rate (g/min)</div>
+    <canvas id="chart-dr"></canvas>
+  </div>
+</div>
+
+<!-- Toolbar -->
+<div class="toolbar">
+  <button onclick="downloadCSV()">⬇ Download CSV</button>
+  <button id="btn-tare" onclick="tare()">⚖ Tare Load Cells</button>
+  <button onclick="fetchHistory(240)">4h History</button>
+  <button onclick="fetchHistory(720)">12h History</button>
+  <button onclick="fetchHistory(1440)">24h History</button>
+</div>
+
+<script>
+const REFRESH_MS = 30000;
+const CHART_OPTS = {
+  responsive: true, maintainAspectRatio: true,
+  plugins: { legend: { labels: { color: '#94a3b8', font: { size: 11 } } } },
+  scales: {
+    x: { ticks: { color: '#64748b', maxTicksLimit: 6, font: { size: 10 } },
+         grid: { color: '#1e293b' } },
+    y: { ticks: { color: '#64748b', font: { size: 10 } },
+         grid: { color: '#1e293b' } }
+  }
+};
+
+function makeChart(id, datasets, yLabel='') {
+  return new Chart(document.getElementById(id), {
+    type: 'line',
+    data: { labels: [], datasets },
+    options: {
+      ...CHART_OPTS,
+      scales: {
+        ...CHART_OPTS.scales,
+        y: { ...CHART_OPTS.scales.y, title: { display: !!yLabel, text: yLabel, color: '#64748b' } }
+      }
+    }
+  });
+}
+
+const charts = {
+  temp: makeChart('chart-temp', [
+    { label: 'Collector In',  borderColor: '#3b82f6', data: [], tension: .3, pointRadius: 2 },
+    { label: 'Collector Out', borderColor: '#ef4444', data: [], tension: .3, pointRadius: 2 },
+    { label: 'Chamber Top',   borderColor: '#eab308', data: [], tension: .3, pointRadius: 2 },
+    { label: 'Chamber Bot',   borderColor: '#f97316', data: [], tension: .3, pointRadius: 2 },
+  ], '°C'),
+  hum: makeChart('chart-hum', [
+    { label: 'Collector In',  borderColor: '#3b82f6', data: [], tension: .3, pointRadius: 2 },
+    { label: 'Collector Out', borderColor: '#ef4444', data: [], tension: .3, pointRadius: 2 },
+    { label: 'Chamber Top',   borderColor: '#eab308', data: [], tension: .3, pointRadius: 2 },
+    { label: 'Chamber Bot',   borderColor: '#f97316', data: [], tension: .3, pointRadius: 2 },
+  ], '%RH'),
+  weight: makeChart('chart-weight', [
+    { label: 'Weight (g)',  borderColor: '#f97316', data: [], yAxisID: 'y',  tension: .3, pointRadius: 2 },
+    { label: 'MC wb (%)',   borderColor: '#3b82f6', data: [], yAxisID: 'y1', tension: .3, pointRadius: 2 },
+  ]),
+  dr: makeChart('chart-dr', [
+    { label: 'Drying Rate', borderColor: '#22c55e', data: [], tension: .3, pointRadius: 2, fill: true,
+      backgroundColor: 'rgba(34,197,94,.08)' },
+  ], 'g/min'),
+};
+// dual y-axis for weight chart
+charts.weight.options.scales.y1 = {
+  type: 'linear', position: 'right',
+  ticks: { color: '#64748b', font: { size: 10 } },
+  grid: { drawOnChartArea: false },
+};
+charts.weight.update();
+
+function fmt(v, d=1) { return v != null ? parseFloat(v).toFixed(d) : '–'; }
+
+function updateCards(d) {
+  document.getElementById('val-weight').textContent = fmt(d.total_weight, 0);
+  document.getElementById('sub-dr').textContent     = `drying rate: ${fmt(d.drying_rate_g_per_min, 3)} g/min`;
+  document.getElementById('val-mc').textContent     = fmt(d.moisture_content_wb);
+  document.getElementById('val-t-out').textContent  = fmt(d.dht_collector_out_temp);
+  document.getElementById('sub-t-in').textContent   = `in: ${fmt(d.dht_collector_in_temp)} °C`;
+  document.getElementById('val-t-top').textContent  = fmt(d.dht_chamber_top_temp);
+  document.getElementById('sub-t-bot').textContent  = `bottom: ${fmt(d.dht_chamber_bottom_temp)} °C`;
+  document.getElementById('val-h-top').textContent  = fmt(d.dht_chamber_top_humidity);
+  document.getElementById('sub-h-bot').textContent  = `bottom: ${fmt(d.dht_chamber_bottom_humidity)} %RH`;
+  document.getElementById('val-eff').textContent    = fmt(d.collector_efficiency_pct);
+
+  // Progress bar: MC goes from ~92% down to 12%
+  const mc = parseFloat(d.moisture_content_wb) || 92;
+  const pct = Math.max(0, Math.min(100, (92 - mc) / (92 - 12) * 100));
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('prog-label').textContent   = `MC: ${fmt(d.moisture_content_wb)} % → target 12 %`;
+
+  document.getElementById('status-dot').classList.add('live');
+  document.getElementById('last-update').textContent  = 'Updated: ' + (d.datetime || new Date().toLocaleTimeString());
+}
+
+function appendHistory(rows) {
+  const labels = rows.map(r => r.datetime ? r.datetime.slice(11,16) : '');
+  const g = (key) => rows.map(r => r[key] != null ? parseFloat(r[key]) : null);
+
+  const C = charts.temp.data;
+  C.labels           = labels;
+  C.datasets[0].data = g('dht_collector_in_temp');
+  C.datasets[1].data = g('dht_collector_out_temp');
+  C.datasets[2].data = g('dht_chamber_top_temp');
+  C.datasets[3].data = g('dht_chamber_bottom_temp');
+  charts.temp.update('none');
+
+  const H = charts.hum.data;
+  H.labels           = labels;
+  H.datasets[0].data = g('dht_collector_in_humidity');
+  H.datasets[1].data = g('dht_collector_out_humidity');
+  H.datasets[2].data = g('dht_chamber_top_humidity');
+  H.datasets[3].data = g('dht_chamber_bottom_humidity');
+  charts.hum.update('none');
+
+  const W = charts.weight.data;
+  W.labels           = labels;
+  W.datasets[0].data = g('total_weight');
+  W.datasets[1].data = g('moisture_content_wb');
+  charts.weight.update('none');
+
+  const D = charts.dr.data;
+  D.labels           = labels;
+  D.datasets[0].data = g('drying_rate_g_per_min');
+  charts.dr.update('none');
+}
+
+async function fetchCurrent() {
+  try {
+    const r = await fetch('/api/current');
+    if (!r.ok) return;
+    updateCards(await r.json());
+  } catch(e) { console.warn('current:', e); }
+}
+
+async function fetchHistory(rows=120) {
+  try {
+    const r = await fetch(`/api/history?rows=${rows}`);
+    if (!r.ok) return;
+    appendHistory(await r.json());
+  } catch(e) { console.warn('history:', e); }
+}
+
+async function fetchStatus() {
+  try {
+    const r = await fetch('/api/status');
+    if (!r.ok) return;
+    const s = await r.json();
+    const badge = document.getElementById('hw-badge');
+    badge.className = 'badge ' + (s.hw_available ? 'badge-ok' : 'badge-sim');
+    badge.textContent = s.hw_available ? 'LIVE HW' : 'SIMULATION';
+  } catch(e) {}
+}
+
+function downloadCSV() { window.location = '/api/download'; }
+
+async function tare() {
+  if (!confirm('Tare both load cells? Remove all weight first.')) return;
+  const r = await fetch('/api/tare', {method:'POST'});
+  alert(r.ok ? 'Tared successfully.' : 'Tare failed.');
+}
+
+// Initial load
+fetchStatus();
+fetchCurrent();
+fetchHistory(120);
+
+// Auto-refresh
+setInterval(fetchCurrent,  REFRESH_MS);
+setInterval(() => fetchHistory(120), REFRESH_MS * 2);
+setInterval(fetchStatus,   60000);
+</script>
+</body>
+</html>
